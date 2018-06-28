@@ -7,116 +7,216 @@ import os
 import urlparse
 from six.moves import urllib
 import schema_salad.ref_resolver
-from cwltool.process import scandeps
+from cwltool.process import scandeps, get_schema
 from cwltool.load_tool import load_tool
 from cwltool.utils import visit_class
+from cwltool.command_line_tool import CommandLineTool
 import requests
 import logging
+import sys
+from cwltool.docker import DockerCommandLineJob
+import tempfile
+import shellescape
+import shutil
+import tarfile
+import zipfile
+from dateutil.tz import tzlocal
+from datetime import datetime
+import re
+import argparse
 
-def software_reqs(basedir, keydict):
-    keydict = {"packages": [{"package": "arvados-python-client"}]}
+def download(tgt, url, version, locks, verified):
+    logging.info("Downloading %s to %s", url, tgt)
+    h = hashlib.sha1()
+    with open(tgt, "wb") as f:
+        with requests.get(url, stream=True) as r:
+            for content in r.iter_content(2**16):
+                h.update(content)
+                f.write(content)
+    checksum = h.hexdigest()
 
-    keydictstr = json.dumps(keydict, separators=(',', ':'),
-                            sort_keys=True)
-    cachekey = hashlib.md5(keydictstr.encode('utf-8')).hexdigest()
+    if tgt in locks:
+        if locks["checksum"] != checksum:
+            logging.error("Checksum does not match cwldeps.lock")
+            return
 
-    inst = basedir
+    rel = os.path.relpath(tgt, os.getcwd())
+    verified[rel] = {
+        "upstream": url,
+        "version": version,
+        "checksum": checksum,
+        "retrieved_at": datetime.now(tzlocal()).isoformat(),
+        "installed_to": [rel]
+    }
 
-    config = None
+    return h.hexdigest()
 
-    if os.path.isdir(os.path.join(inst, cachekey)):
-        if os.path.isfile(os.path.join(inst, cachekey, "cwldep.json")):
-            with open(os.path.join(inst, cachekey, "cwldep.json")) as f:
-                config = json.load(f)
 
-    if not config:
-        tgtdir = os.path.join(inst, cachekey)
-        if not os.path.isdir(tgtdir):
-            os.makedirs(tgtdir)
+def verify(tgt, locks, verified):
+    rel = os.path.relpath(tgt, os.getcwd())
 
-        ctx = cwltool.context.RuntimeContext()
-        ctx.tmp_outdir_prefix = tgtdir+"/"
+    if not os.path.isfile(tgt) or rel not in locks:
+        return False
 
-        f = cwltool.factory.Factory(runtimeContext=ctx)
-        pipinstall = f.make("pip.cwl")
+    h = hashlib.sha1()
+    with open(tgt, "rb") as f:
+        content = f.read(2**16)
+        while content:
+            h.update(content)
+            content = f.read(2**16)
+    if h.hexdigest() == locks[rel]["checksum"]:
+        verified[rel] = locks[rel]
+        return True
+    else:
+        return False
 
-        config = pipinstall(**keydict)
 
-        with open(os.path.join(inst, cachekey, "packages.json"), "w") as f:
-            f.write(keydictstr)
-
-        with open(os.path.join(inst, cachekey, "cwldep.json"), "w") as f:
-            json.dump(config, f)
-
-    env = {}
-
-    for ev in config["env"]:
-        k = ev["envName"]
-        v = ev["envValue"]
-        if k in env:
-            env[k] = v + ":" + k
-        else:
-            env[k] = v
-
-    with open("wrapper.sh", "w") as f:
-        f.write("""#!/bin/sh
-%s
-cwl-runner %s "$@"
-        """ % ("\n".join("export '%s=%s'" % (k,v) for k,v in env.items()),
-               " ".join("'--preserve-environment=%s'" % k for k in env)))
-
-def cwl_deps(basedir, dependencies, update=False):
+def cwl_deps(basedir, dependencies, locks, verified, update=False):
     for d in dependencies["dependencies"]:
         upstream = d["upstream"]
         spup = urllib.parse.urlsplit(upstream)
+
         if d.get("installTo"):
             installTo = os.path.join(basedir, d.get("installTo"))
         else:
             installTo = os.path.dirname(os.path.join(basedir, spup.netloc, spup.path.lstrip("/")))
 
-        if os.path.isfile(os.path.join(installTo, os.path.basename(spup.path))) and not update:
-            continue
+        if not os.path.isdir(installTo):
+            os.makedirs(installTo)
 
-        deps = {"class": "File", "location": upstream}  # type: Dict[Text, Any]
+        if spup.scheme == "http" or spup.scheme == "https":
+            tgt = os.path.join(installTo, os.path.basename(spup.path))
 
-        loadctx = cwltool.context.LoadingContext()
-        tool = load_tool(upstream, loadctx)
+            if spup.path.endswith(".cwl"):
+                deps = {"class": "File", "location": upstream}  # type: Dict[Text, Any]
 
-        def loadref(base, uri):
-            return tool.doc_loader.fetch(tool.doc_loader.fetcher.urljoin(base, uri))
+                document_loader, workflowobj, uri = cwltool.load_tool.fetch_document(upstream)
 
-        tool.doc_loader.idx = {}
+                (sch_document_loader, avsc_names) = \
+                    get_schema(workflowobj["cwlVersion"])[:2]
 
-        sfs = scandeps(
-            upstream, tool.doc_loader.fetch(upstream), {"$import", "run"},
-            {"$include", "$schemas", "location"}, loadref)
-        if sfs:
-            deps["secondaryFiles"] = sfs
+                document, metadata = sch_document_loader.resolve_all(workflowobj, uri, checklinks=False)
 
-        def retrieve(obj):
-            sploc = urllib.parse.urlsplit(obj["location"])
-            rp = os.path.relpath(sploc.path, os.path.dirname(spup.path))
-            tgt = os.path.join(installTo, rp)
-            if not os.path.isdir(os.path.dirname(tgt)):
-                os.makedirs(os.path.dirname(tgt))
-            logging.info("Copying %s to %s", obj["location"], tgt)
-            with open(tgt, "wb") as f:
-                with requests.get(obj["location"], stream=True) as r:
-                    for content in r.iter_content(2**16):
-                        f.write(content)
+                def loadref(base, uri):
+                    return document_loader.fetch(document_loader.fetcher.urljoin(base, uri))
 
-        visit_class(deps, ("File",), retrieve)
+                document_loader.idx = {}
 
-        req, _ = tool.get_requirement("http://commonwl.org/cwldep#Dependencies")
-        if req:
-            cwl_deps(installTo, req)
+                sfs = scandeps(
+                    upstream, document_loader.fetch(upstream), {"$import", "run"},
+                    {"$include", "$schemas", "location"}, loadref)
+                if sfs:
+                    deps["secondaryFiles"] = sfs
 
-tool = load_tool("sample.cwl", cwltool.context.LoadingContext())
+                def retrieve(obj):
+                    sploc = urllib.parse.urlsplit(obj["location"])
+                    rp = os.path.relpath(sploc.path, os.path.dirname(spup.path))
+                    tgt = os.path.join(installTo, rp)
+                    if not os.path.isdir(os.path.dirname(tgt)):
+                        os.makedirs(os.path.dirname(tgt))
+                    if verify(tgt, locks, verified) and not update:
+                        return
+                    download(tgt, obj["location"], "", locks, verified)
 
-req, _ = tool.get_requirement("http://commonwl.org/cwldep#Dependencies")
-if req:
-    cwl_deps(os.getcwd(), req)
+                visit_class(deps, ("File",), retrieve)
 
-req, _ = tool.get_requirement("SoftwareRequirement")
-if req:
-    software_reqs(os.getcwd()+"/SoftwareRequirement", req)
+                def do_deps(req):
+                    cwl_deps(installTo, req, locks, verified, update)
+
+                visit_class(document, ("http://commonwl.org/cwldep#Dependencies",), do_deps)
+
+            elif spup.path.endswith(".tar.gz") or spup.path.endswith(".tar.bz2") or spup.path.endswith(".zip"):
+                download(tgt, upstream, "", locks, verified)
+                if spup.path.endswith(".tar.gz") or spup.path.endswith(".tar.bz2"):
+                    with tarfile.open(tgt) as t:
+                        t.extractall(installTo)
+                elif spup.path.endswith(".zip"):
+                    with zipfile.ZipFile(tgt) as z:
+                        z.extractall(installTo)
+                rel = os.path.relpath(tgt, os.getcwd())
+                verified[rel]["installed_to"] = [tgt, os.path.relpath(installTo, os.getcwd())]
+
+            else:
+                rq = requests.get(upstream+".git/info/refs?service=git-upload-pack")
+                if rq.status_code == 200:
+                    if os.path.isdir(os.path.join(tgt, ".git")):
+                        subprocess.call(["git", "fetch", "--all"])
+                    else:
+                        subprocess.call(["git", "clone", upstream, tgt])
+
+                    version = d.get("version")
+                    rel = os.path.relpath(tgt, os.getcwd())
+                    if rel in locks and not update:
+                        version = locks[rel]["version"]
+
+                    head = subprocess.check_output(["git", "rev-parse", "HEAD"])
+                    if head != version:
+                        if re.match(r"^[0-9a-f]{40}$", version):
+                            subprocess.call(["git", "checkout", version], cwd=tgt)
+                        else:
+                            subprocess.call(["git", "checkout", "origin/"+version], cwd=tgt)
+                    commit = subprocess.check_output(["git", "rev-parse", "HEAD"])
+
+                    verified[rel] = {
+                        "upstream": upstream,
+                        "version": commit,
+                        "retrieved_at": datetime.now(tzlocal()).isoformat(),
+                        "installed_to": [rel]
+                    }
+
+        else:
+            logging.error("Scheme %s not supported", spup.scheme)
+
+def main():
+
+    parser = argparse.ArgumentParser(
+        description='Reference executor for Common Workflow Language standards.')
+    parser.add_argument("operation", type=str, choices=("install", "update", "clean"))
+    parser.add_argument("dependencies", type=str)
+
+    args = parser.parse_args()
+
+    document_loader, workflowobj, uri = cwltool.load_tool.fetch_document(args.dependencies)
+
+    (sch_document_loader, avsc_names) = \
+        get_schema(workflowobj["cwlVersion"])[:2]
+
+    document, metadata = sch_document_loader.resolve_all(workflowobj, uri, checklinks=False)
+
+    locks = {}
+    if os.path.isfile("cwldep.lock"):
+        with open("cwldep.lock", "r") as l:
+            locks = json.load(l)
+
+    verified = {}
+
+    def do_deps(req):
+        cwl_deps(os.getcwd(), req, locks, verified, update=(args.operation=="update"))
+
+    visit_class(document, ("http://commonwl.org/cwldep#Dependencies",), do_deps)
+
+    unref = False
+    for l in locks:
+        if l not in verified:
+            if args.operation == "clean":
+                for i in locks[l]["installed_to"]:
+                    logging.warn("Removing %s", i)
+                    if os.path.isfile(i):
+                        os.remove(i)
+                    else:
+                        shutil.rmtree(i)
+            else:
+                logging.warn("In cwldep.lock but not referenced: %s", l)
+                verified[l] = locks[l]
+                unref = True
+
+    if unref:
+        logging.warn("Use 'cwldep clean' to delete unused dependencies.")
+
+    with open("cwldep.lock", "w") as l:
+        json.dump(verified, l, indent=4, sort_keys=True)
+
+    document, metadata = sch_document_loader.resolve_all(workflowobj, uri, checklinks=True)
+
+
+main()
