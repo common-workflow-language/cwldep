@@ -25,20 +25,38 @@ from datetime import datetime
 import re
 import argparse
 
-def download(tgt, url, version, locks, verified):
-    logging.info("Downloading %s to %s", url, tgt)
-    h = hashlib.sha1()
-    with open(tgt, "wb") as f:
+logging.basicConfig(level=logging.INFO)
+
+def download(tgt, url, version, locks, verified, check_only):
+    dltgt = tgt + "_download_"
+
+    rel = os.path.relpath(tgt, os.getcwd())
+
+    logging.info("Fetching %s to %s", url, rel)
+
+    if check_only:
+        if not os.path.isfile(tgt) or rel not in locks:
+            logging.error("Needs install %s", rel)
+            return
+
+    with open(dltgt, "wb") as f:
+        h = hashlib.sha1()
         with requests.get(url, stream=True) as r:
             for content in r.iter_content(2**16):
                 h.update(content)
                 f.write(content)
-    checksum = h.hexdigest()
+        checksum = h.hexdigest()
 
-    if tgt in locks:
-        if locks["checksum"] != checksum:
-            logging.error("Checksum does not match cwldeps.lock")
-            return
+    if rel in locks:
+        if locks[rel]["checksum"] != checksum:
+            logging.warn("Upstream has changed: %s", rel)
+        else:
+            logging.info("Up to date: %s", rel)
+
+    if check_only:
+        return
+
+    os.rename(dltgt, tgt)
 
     rel = os.path.relpath(tgt, os.getcwd())
     verified[rel] = {
@@ -48,8 +66,6 @@ def download(tgt, url, version, locks, verified):
         "retrieved_at": datetime.now(tzlocal()).isoformat(),
         "installed_to": [rel]
     }
-
-    return h.hexdigest()
 
 
 def verify(tgt, locks, verified):
@@ -71,7 +87,7 @@ def verify(tgt, locks, verified):
         return False
 
 
-def cwl_deps(basedir, dependencies, locks, verified, update=False):
+def cwl_deps(basedir, dependencies, locks, verified, operation):
     for d in dependencies["dependencies"]:
         upstream = d["upstream"]
         spup = urllib.parse.urlsplit(upstream)
@@ -114,19 +130,19 @@ def cwl_deps(basedir, dependencies, locks, verified, update=False):
                     tgt = os.path.join(installTo, rp)
                     if not os.path.isdir(os.path.dirname(tgt)):
                         os.makedirs(os.path.dirname(tgt))
-                    if verify(tgt, locks, verified) and not update:
+                    if verify(tgt, locks, verified) and operation not in ("update", "check"):
                         return
-                    download(tgt, obj["location"], "", locks, verified)
+                    download(tgt, obj["location"], "", locks, verified, operation=="check")
 
                 visit_class(deps, ("File",), retrieve)
 
                 def do_deps(req):
-                    cwl_deps(installTo, req, locks, verified, update)
+                    cwl_deps(installTo, req, locks, verified, operation)
 
                 visit_class(document, ("http://commonwl.org/cwldep#Dependencies",), do_deps)
 
             elif spup.path.endswith(".tar.gz") or spup.path.endswith(".tar.bz2") or spup.path.endswith(".zip"):
-                download(tgt, upstream, "", locks, verified)
+                download(tgt, upstream, "", locks, verified, operation=="check")
                 if spup.path.endswith(".tar.gz") or spup.path.endswith(".tar.bz2"):
                     with tarfile.open(tgt) as t:
                         t.extractall(installTo)
@@ -146,7 +162,7 @@ def cwl_deps(basedir, dependencies, locks, verified, update=False):
 
                     version = d.get("version")
                     rel = os.path.relpath(tgt, os.getcwd())
-                    if rel in locks and not update:
+                    if rel in locks and operation != "update":
                         version = locks[rel]["version"]
 
                     head = subprocess.check_output(["git", "rev-parse", "HEAD"])
@@ -171,7 +187,7 @@ def main():
 
     parser = argparse.ArgumentParser(
         description='Reference executor for Common Workflow Language standards.')
-    parser.add_argument("operation", type=str, choices=("install", "update", "clean"))
+    parser.add_argument("operation", type=str, choices=("install", "update", "clean", "check"))
     parser.add_argument("dependencies", type=str)
 
     args = parser.parse_args()
@@ -191,7 +207,7 @@ def main():
     verified = {}
 
     def do_deps(req):
-        cwl_deps(os.getcwd(), req, locks, verified, update=(args.operation=="update"))
+        cwl_deps(os.getcwd(), req, locks, verified, args.operation)
 
     visit_class(document, ("http://commonwl.org/cwldep#Dependencies",), do_deps)
 
