@@ -259,7 +259,7 @@ def add_dep(fn, upstream, set_version, install_to):
 def main():
 
     parser = argparse.ArgumentParser(
-        description='Reference executor for Common Workflow Language standards.')
+        description='Common Workflow Language dependency managager')
     parser.add_argument("operation", type=str, choices=("install", "update", "clean", "check", "add", "search"))
     parser.add_argument("dependencies", type=str)
     parser.add_argument("upstream", type=str, nargs="?")
