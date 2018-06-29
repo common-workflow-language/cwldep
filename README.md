@@ -2,6 +2,22 @@
 
 This tool helps you to import tools and workflows from other sources for use in your own workflow.
 
+# Setup
+It is highly recommended to setup virtual environment before installing `cwldep`:
+
+```
+virtualenv -p python2 venv   # Create a virtual environment, can use `python3` as well
+source venv/bin/activate     # Activate environment before installing `cwldep`
+```
+
+Install from source:
+```
+git clone https://github.com/common-workflow-language/cwldep.git # clone cwldep repo
+cd cwldep         # Switch to source directory
+python setup.py install
+cwldep -h  # Check if the installation works correctly
+```
+
 # Adding file dependencies
 
 ```

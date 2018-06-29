@@ -60,6 +60,7 @@ def download(tgt, url, version, locks, verified, check_only):
             logging.info("Up to date: %s", rel)
 
     if check_only:
+        os.remove(dltgt)
         return
 
     os.rename(dltgt, tgt)
@@ -264,7 +265,7 @@ def add_dep(fn, upstream, set_version, install_to):
 def main():
 
     parser = argparse.ArgumentParser(
-        description='Common Workflow Language dependency managager')
+        description='Common Workflow Language dependency manager')
     parser.add_argument("operation", type=str, choices=("install", "update", "clean", "check", "add", "search"))
     parser.add_argument("dependencies", type=str)
     parser.add_argument("upstream", type=str, nargs="?")
