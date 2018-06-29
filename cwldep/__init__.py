@@ -1,10 +1,10 @@
+from __future__ import print_function
 import cwltool.factory
 import cwltool.context
 import subprocess
 import json
 import hashlib
 import os
-import urlparse
 from six.moves import urllib
 import schema_salad.ref_resolver
 from cwltool.process import scandeps, get_schema
@@ -183,7 +183,7 @@ def cwl_deps(basedir, dependencies, locks, verified, operation):
                         version = locks[rel]["version"]
 
                     if version:
-                        print version
+                        print(version)
                         co = subprocess.check_output(["git", "rev-parse", version], cwd=tgt).rstrip()
                         head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=tgt).rstrip()
                         head = head.rstrip()
@@ -272,7 +272,7 @@ def main():
         add_dep(args.dependencies, args.upstream, args.set_version, args.install_to)
 
     if args.operation == "search":
-        print "WIP"
+        print("WIP")
         return
 
     document, document_loader = load_nocheck(args.dependencies)
