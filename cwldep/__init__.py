@@ -60,6 +60,7 @@ def download(tgt, url, version, locks, verified, check_only):
             logging.info("Up to date: %s", rel)
 
     if check_only:
+        os.remove(dltgt)
         return
 
     os.rename(dltgt, tgt)

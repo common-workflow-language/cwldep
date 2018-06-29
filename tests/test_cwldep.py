@@ -56,10 +56,14 @@ class DownloadTestCase(unittest.TestCase):
         with patch("cwldep.open", mocked_open):
             cwldep.download(tgt="myfile.cwl", url="someurl", version="1",
                             locks=locks, verified=verified, check_only=True)
+
+        mocked_open.assert_called_with('myfile.cwl_download_', 'wb')
+        mock_os.remove.assert_called_with('myfile.cwl_download_')
+        mock_os.rename.assert_not_called()
+
         mock_logging.info.assert_called_with('Fetching %s to %s', 'someurl', 'myrelpath')
         mock_logging.warn.assert_called_with('Upstream has changed: %s', 'myrelpath')
         mock_requests.get.assert_called_with('someurl', stream=True)
-        mock_os.rename.assert_not_called()
 
     @patch('cwldep.os')
     @patch('cwldep.logging')
