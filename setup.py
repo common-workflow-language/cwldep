@@ -7,7 +7,7 @@ import sys
 from setuptools import setup
 
 SETUP_DIR = os.path.dirname(__file__)
-README = os.path.join(SETUP_DIR, 'README.rst')
+README = os.path.join(SETUP_DIR, 'README.md')
 
 setup(name='cwldep',
       version='1.0',

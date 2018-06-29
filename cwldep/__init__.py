@@ -157,14 +157,17 @@ def cwl_deps(basedir, dependencies, locks, verified, operation):
 
             elif spup.path.endswith(".tar.gz") or spup.path.endswith(".tar.bz2") or spup.path.endswith(".zip"):
                 download(tgt, upstream, "", locks, verified, operation=="check")
-                if spup.path.endswith(".tar.gz") or spup.path.endswith(".tar.bz2"):
+                if spup.path.endswith(".tar.gz"):
+                    with tarfile.open(tgt) as t:
+                        t.extractall(installTo)
+                elif spup.path.endswith(".tar.bz2"):
                     with tarfile.open(tgt) as t:
                         t.extractall(installTo)
                 elif spup.path.endswith(".zip"):
                     with zipfile.ZipFile(tgt) as z:
                         z.extractall(installTo)
                 rel = os.path.relpath(tgt, os.getcwd())
-                verified[rel]["installed_to"] = [tgt, os.path.relpath(installTo, os.getcwd())]
+                verified[rel]["installed_to"] = [tgt, os.path.relpath(ex, os.getcwd())]
 
             else:
                 rq = requests.get(upstream+".git/info/refs?service=git-upload-pack")
@@ -237,6 +240,8 @@ def add_dep(fn, upstream):
 
     namespaces["dep"] = "http://commonwl.org/cwldep#"
     workflowobj["$namespaces"] = namespaces
+
+    del workflowobj["id"]
 
     with open("_"+fn+"_", "w") as f:
         ruamel.yaml.round_trip_dump(workflowobj, f)
