@@ -26,7 +26,7 @@ You can also import archives (.tar.gz, .tar.bz2, and .zip):
 cwldep add myfile.cwl https://github.com/common-workflow-language/workflows/archive/draft2.tar.gz
 ```
 
-This will download and extract to `github.com/common-workflow-language/workflows/archive`
+This will download and extract to the local directory `github.com/common-workflow-language/workflows/archive`
 
 You can also import git repositories:
 
@@ -34,7 +34,11 @@ You can also import git repositories:
 cwldep add myfile.cwl https://github.com/common-workflow-language/workflows
 ```
 
-This will clone to `github.com/common-workflow-language/workflows`
+This will clone into the local directory `github.com/common-workflow-language/workflows`
+
+# Setting git version
+
+
 
 # Installing dependencies
 

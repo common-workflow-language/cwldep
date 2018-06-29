@@ -208,7 +208,7 @@ def expand_ns(namespaces, symbol):
     else:
         return symbol
 
-def add_dep(fn, upstream):
+def add_dep(fn, upstream, set_version, install_to):
     document_loader, workflowobj, uri = cwltool.load_tool.fetch_document(fn)
     namespaces = workflowobj.get("$namespaces", cmap({}))
 
@@ -216,25 +216,32 @@ def add_dep(fn, upstream):
 
     def _add(wf):
         hints = wf.setdefault("hints", {})
+        obj = cmap({"upstream": upstream})
+        if set_version:
+            obj["version"] = set_version
+        if install_to:
+            obj["installto"] = install_to
         if isinstance(hints, list):
             for h in hints:
                 if expand_ns(namespaces, h["class"]) == "http://commonwl.org/cwldep#Dependencies":
                     for u in h["dependencies"]:
                         if u["upstream"] == upstream:
+                            u.update(obj)
                             return
-                    h["dependencies"].append(cmap({"upstream": upstream}))
+                    h["dependencies"].append(cmap(obj))
                     return
             hints.append(cmap({"class": "dep:Dependencies",
-                               "dependencies": [{"upstream": upstream}]}))
+                               "dependencies": [obj]}))
         elif isinstance(hints, dict):
             for h in hints:
                 if expand_ns(namespaces, h) == "http://commonwl.org/cwldep#Dependencies":
                     for u in hints[h]["dependencies"]:
                         if u["upstream"] == upstream:
+                            u.update(obj)
                             return
-                    hints[h]["dependencies"].append(cmap({"upstream": upstream}))
+                    hints[h]["dependencies"].append(cmap(obj))
                     return
-            hints["dep:Dependencies"] = cmap({"dependencies": [{"upstream": upstream}]})
+            hints["dep:Dependencies"] = cmap({"dependencies": [obj]})
 
     visit_class(workflowobj, ("Workflow",), _add)
 
@@ -255,11 +262,13 @@ def main():
     parser.add_argument("operation", type=str, choices=("install", "update", "clean", "check", "add", "search"))
     parser.add_argument("dependencies", type=str)
     parser.add_argument("upstream", type=str, nargs="?")
+    parser.add_argument("--set-version", type=str, default=None)
+    parser.add_argument("--install-to", type=str, default=None)
 
     args = parser.parse_args()
 
     if args.operation == "add":
-        add_dep(args.dependencies, args.upstream)
+        add_dep(args.dependencies, args.upstream, args.set_version, args.install_to)
 
     if args.operation == "search":
         print "WIP"
