@@ -247,7 +247,7 @@ def main():
 
     parser = argparse.ArgumentParser(
         description='Reference executor for Common Workflow Language standards.')
-    parser.add_argument("operation", type=str, choices=("install", "update", "clean", "check", "add"))
+    parser.add_argument("operation", type=str, choices=("install", "update", "clean", "check", "add", "search"))
     parser.add_argument("dependencies", type=str)
     parser.add_argument("upstream", type=str, nargs="?")
 
@@ -255,6 +255,10 @@ def main():
 
     if args.operation == "add":
         add_dep(args.dependencies, args.upstream)
+
+    if args.operation == "search":
+        print "WIP"
+        return
 
     document, document_loader = load_nocheck(args.dependencies)
 
