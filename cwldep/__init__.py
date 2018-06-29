@@ -24,6 +24,8 @@ from dateutil.tz import tzlocal
 from datetime import datetime
 import re
 import argparse
+import ruamel.yaml
+from schema_salad.sourceline import cmap
 
 logging.basicConfig(level=logging.INFO)
 
@@ -36,7 +38,7 @@ def download(tgt, url, version, locks, verified, check_only):
 
     if check_only:
         if not os.path.isfile(tgt) or rel not in locks:
-            logging.error("Needs install %s", rel)
+            logging.error("Need install %s", rel)
             return
 
     with open(dltgt, "wb") as f:
@@ -87,6 +89,23 @@ def verify(tgt, locks, verified):
         return False
 
 
+def load_nocheck(upstream):
+    document_loader, workflowobj, uri = cwltool.load_tool.fetch_document(upstream)
+
+    (sch_document_loader, avsc_names) = \
+        get_schema(workflowobj["cwlVersion"])[:2]
+
+    cp = sch_document_loader.ctx.copy()
+    cp["upstream"] = {
+        "@type": "@id"
+    }
+    sch_document_loader = schema_salad.ref_resolver.Loader(cp)
+
+    document, metadata = sch_document_loader.resolve_all(workflowobj, uri, checklinks=False)
+
+    return document, document_loader
+
+
 def cwl_deps(basedir, dependencies, locks, verified, operation):
     for d in dependencies["dependencies"]:
         upstream = d["upstream"]
@@ -106,12 +125,7 @@ def cwl_deps(basedir, dependencies, locks, verified, operation):
             if spup.path.endswith(".cwl"):
                 deps = {"class": "File", "location": upstream}  # type: Dict[Text, Any]
 
-                document_loader, workflowobj, uri = cwltool.load_tool.fetch_document(upstream)
-
-                (sch_document_loader, avsc_names) = \
-                    get_schema(workflowobj["cwlVersion"])[:2]
-
-                document, metadata = sch_document_loader.resolve_all(workflowobj, uri, checklinks=False)
+                document, document_loader = load_nocheck(upstream)
 
                 def loadref(base, uri):
                     return document_loader.fetch(document_loader.fetcher.urljoin(base, uri))
@@ -183,25 +197,71 @@ def cwl_deps(basedir, dependencies, locks, verified, operation):
         else:
             logging.error("Scheme %s not supported", spup.scheme)
 
+
+def expand_ns(namespaces, symbol):
+    sp = symbol.split(":", 2)
+    if sp[0] in namespaces:
+        return namespaces[sp[0]]+"".join(sp[1:])
+    else:
+        return symbol
+
+def add_dep(fn, upstream):
+    document_loader, workflowobj, uri = cwltool.load_tool.fetch_document(fn)
+    namespaces = workflowobj.get("$namespaces", cmap({}))
+
+    document_loader.idx = {}
+
+    def _add(wf):
+        hints = wf.setdefault("hints", {})
+        if isinstance(hints, list):
+            for h in hints:
+                if expand_ns(namespaces, h["class"]) == "http://commonwl.org/cwldep#Dependencies":
+                    for u in h["dependencies"]:
+                        if u["upstream"] == upstream:
+                            return
+                    h["dependencies"].append(cmap({"upstream": upstream}))
+                    return
+            hints.append(cmap({"class": "dep:Dependencies",
+                               "dependencies": [{"upstream": upstream}]}))
+        elif isinstance(hints, dict):
+            for h in hints:
+                if expand_ns(namespaces, h) == "http://commonwl.org/cwldep#Dependencies":
+                    for u in hints[h]["dependencies"]:
+                        if u["upstream"] == upstream:
+                            return
+                    hints[h]["dependencies"].append(cmap({"upstream": upstream}))
+                    return
+            hints["dep:Dependencies"] = cmap({"dependencies": [{"upstream": upstream}]})
+
+    visit_class(workflowobj, ("Workflow",), _add)
+
+    namespaces["dep"] = "http://commonwl.org/cwldep#"
+    workflowobj["$namespaces"] = namespaces
+
+    with open("_"+fn+"_", "w") as f:
+        ruamel.yaml.round_trip_dump(workflowobj, f)
+    os.rename("_"+fn+"_", fn)
+
+
 def main():
 
     parser = argparse.ArgumentParser(
         description='Reference executor for Common Workflow Language standards.')
-    parser.add_argument("operation", type=str, choices=("install", "update", "clean", "check"))
+    parser.add_argument("operation", type=str, choices=("install", "update", "clean", "check", "add"))
     parser.add_argument("dependencies", type=str)
+    parser.add_argument("upstream", type=str, nargs="?")
 
     args = parser.parse_args()
 
-    document_loader, workflowobj, uri = cwltool.load_tool.fetch_document(args.dependencies)
+    if args.operation == "add":
+        add_dep(args.dependencies, args.upstream)
 
-    (sch_document_loader, avsc_names) = \
-        get_schema(workflowobj["cwlVersion"])[:2]
+    document, document_loader = load_nocheck(args.dependencies)
 
-    document, metadata = sch_document_loader.resolve_all(workflowobj, uri, checklinks=False)
-
+    lockfile = args.dependencies + ".dep.lock"
     locks = {}
-    if os.path.isfile("cwldep.lock"):
-        with open("cwldep.lock", "r") as l:
+    if os.path.isfile(lockfile):
+        with open(lockfile, "r") as l:
             locks = json.load(l)
 
     verified = {}
@@ -229,10 +289,7 @@ def main():
     if unref:
         logging.warn("Use 'cwldep clean' to delete unused dependencies.")
 
-    with open("cwldep.lock", "w") as l:
+    with open(lockfile, "w") as l:
         json.dump(verified, l, indent=4, sort_keys=True)
 
-    document, metadata = sch_document_loader.resolve_all(workflowobj, uri, checklinks=True)
-
-
-main()
+    document_loader.resolve_all(document, args.dependencies, checklinks=True)
