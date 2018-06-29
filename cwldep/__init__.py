@@ -157,7 +157,7 @@ def cwl_deps(basedir, dependencies, locks, verified, operation):
                 def do_deps(req):
                     cwl_deps(installTo, req, locks, verified, operation)
 
-                visit_class(document, (DEP_NAMESPACE_URL,), do_deps)
+                visit_class(document, (CWLDEP_DEPENDENCIES_URL,), do_deps)
 
             elif spup.path.endswith(".tar.gz") or spup.path.endswith(".tar.bz2") or spup.path.endswith(".zip"):
                 download(tgt, upstream, "", locks, verified, operation=="check")
@@ -213,6 +213,7 @@ def expand_ns(namespaces, symbol):
     else:
         return symbol
 
+
 def add_dep(fn, upstream, set_version, install_to):
     document_loader, workflowobj, uri = cwltool.load_tool.fetch_document(fn)
     namespaces = workflowobj.get("$namespaces", cmap({}))
@@ -228,7 +229,7 @@ def add_dep(fn, upstream, set_version, install_to):
             obj["installTo"] = install_to
         if isinstance(hints, list):
             for h in hints:
-                if expand_ns(namespaces, h["class"]) == DEP_NAMESPACE_URL:
+                if expand_ns(namespaces, h["class"]) == CWLDEP_DEPENDENCIES_URL:
                     for u in h["dependencies"]:
                         if u["upstream"] == upstream:
                             u.update(obj)
@@ -239,7 +240,7 @@ def add_dep(fn, upstream, set_version, install_to):
                                "dependencies": [obj]}))
         elif isinstance(hints, dict):
             for h in hints:
-                if expand_ns(namespaces, h) == DEP_NAMESPACE_URL:
+                if expand_ns(namespaces, h) == CWLDEP_DEPENDENCIES_URL:
                     for u in hints[h]["dependencies"]:
                         if u["upstream"] == upstream:
                             u.update(obj)
