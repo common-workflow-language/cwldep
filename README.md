@@ -2,7 +2,7 @@
 
 This tool helps you to import tools and workflows from other sources for use in your own workflow.
 
-# Adding dependencies
+# Adding file dependencies
 
 ```
 cwldep add myfile.cwl https://raw.githubusercontent.com/common-workflow-language/workflows/master/tools/samtools-faidx.cwl
@@ -20,6 +20,14 @@ steps:
     run: raw.githubusercontent.com/common-workflow-language/workflows/master/tools/samtools-faidx.cwl
 ```
 
+# Changing the install target
+
+```
+cwldep add --install-to samtools myfile.cwl https://raw.githubusercontent.com/common-workflow-language/workflows/master/tools/samtools-faidx.cwl
+```
+
+# Using archives
+
 You can also import archives (.tar.gz, .tar.bz2, and .zip):
 
 ```
@@ -27,6 +35,8 @@ cwldep add myfile.cwl https://github.com/common-workflow-language/workflows/arch
 ```
 
 This will download and extract to the local directory `github.com/common-workflow-language/workflows/archive`
+
+# Using git upstream
 
 You can also import git repositories:
 
@@ -36,9 +46,9 @@ cwldep add myfile.cwl https://github.com/common-workflow-language/workflows
 
 This will clone into the local directory `github.com/common-workflow-language/workflows`
 
-# Setting git version
-
-
+```
+cwldep add --set-version=draft-2 myfile.cwl https://github.com/common-workflow-language/workflows
+```
 
 # Installing dependencies
 

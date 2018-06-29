@@ -6,7 +6,9 @@ hints:
   dep:Dependencies:
     dependencies:
     - upstream: https://raw.githubusercontent.com/common-workflow-language/workflows/master/tools/samtools-faidx.cwl
-    - upstream: http://ablablaeu
+    - upstream: https://github.com/common-workflow-language/workflows
+      version: draft2
+      installTo: blub
 #       - upstream: https://github.com/common-workflow-language/workflows
 #         version: master
 #      - upstream: https://github.com/common-workflow-language/workflows/archive/draft2.zip
@@ -18,4 +20,3 @@ steps:
     in: []
     out: []
     run: raw.githubusercontent.com/common-workflow-language/workflows/master/tools/samtools-faidx.cwl
-id: file:///home/peter/work/cwldep/sample.cwl

@@ -182,13 +182,14 @@ def cwl_deps(basedir, dependencies, locks, verified, operation):
                     if rel in locks and operation != "update":
                         version = locks[rel]["version"]
 
-                    head = subprocess.check_output(["git", "rev-parse", "HEAD"])
-                    if head != version:
-                        if re.match(r"^[0-9a-f]{40}$", version):
-                            subprocess.call(["git", "checkout", version], cwd=tgt)
-                        else:
-                            subprocess.call(["git", "checkout", "origin/"+version], cwd=tgt)
-                    commit = subprocess.check_output(["git", "rev-parse", "HEAD"])
+                    if version:
+                        print version
+                        co = subprocess.check_output(["git", "rev-parse", version], cwd=tgt).rstrip()
+                        head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=tgt).rstrip()
+                        head = head.rstrip()
+                        if head != co:
+                            subprocess.call(["git", "checkout", co], cwd=tgt)
+                    commit = subprocess.check_output(["git", "rev-parse", "HEAD"]).rstrip()
 
                     verified[rel] = {
                         "upstream": upstream,
@@ -220,7 +221,7 @@ def add_dep(fn, upstream, set_version, install_to):
         if set_version:
             obj["version"] = set_version
         if install_to:
-            obj["installto"] = install_to
+            obj["installTo"] = install_to
         if isinstance(hints, list):
             for h in hints:
                 if expand_ns(namespaces, h["class"]) == "http://commonwl.org/cwldep#Dependencies":
