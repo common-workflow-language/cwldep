@@ -31,7 +31,7 @@ class DownloadTestCase(unittest.TestCase):
         mock_os.path.relpath.return_value = 'myrelpath'
         mock_hashlib.sha1.return_value.hexdigest.return_value = '00myhash123'
         mocked_open = mock_open()
-        with patch("__builtin__.open", mocked_open):
+        with patch("cwldep.open", mocked_open):
             cwldep.download(tgt="myfile.cwl", url="someurl", version="1",
                             locks=locks, verified=verified, check_only=True)
         mock_logging.info.assert_has_calls([
@@ -53,7 +53,7 @@ class DownloadTestCase(unittest.TestCase):
         mock_os.path.relpath.return_value = 'myrelpath'
         mock_hashlib.sha1.return_value.hexdigest.return_value = '00myhash123'
         mocked_open = mock_open()
-        with patch("__builtin__.open", mocked_open):
+        with patch("cwldep.open", mocked_open):
             cwldep.download(tgt="myfile.cwl", url="someurl", version="1",
                             locks=locks, verified=verified, check_only=True)
         mock_logging.info.assert_called_with('Fetching %s to %s', 'someurl', 'myrelpath')
@@ -75,7 +75,7 @@ class DownloadTestCase(unittest.TestCase):
         mock_requests.get.return_value.__enter__.return_value.iter_content.return_value = ['cwlVersion: v1.0']
         mocked_open = mock_open()
 
-        with patch("__builtin__.open", mocked_open):
+        with patch("cwldep.open", mocked_open):
             cwldep.download(tgt="myfile.cwl", url="someurl", version="1",
                             locks=locks, verified=verified, check_only=False)
         mocked_open.return_value.write.assert_called_with('cwlVersion: v1.0')
@@ -106,7 +106,7 @@ class VerifyTestCase(unittest.TestCase):
         verified = {}
 
         mocked_open = mock_open()
-        with patch("__builtin__.open", mocked_open):
+        with patch("cwldep.open", mocked_open):
             self.assertEqual(cwldep.verify(tgt="sometarget.cwl",
                                            locks={'myrelpath': {'checksum':'00myhash123'}},
                                            verified=verified), True)
@@ -121,7 +121,7 @@ class VerifyTestCase(unittest.TestCase):
         verified = {}
 
         mocked_open = mock_open()
-        with patch("__builtin__.open", mocked_open):
+        with patch("cwldep.open", mocked_open):
             self.assertEqual(cwldep.verify(tgt="sometarget.cwl",
                                            locks={'myrelpath': {'checksum':'00myhash123'}},
                                            verified=verified), False)
@@ -229,7 +229,7 @@ class AddDepTestCase(unittest.TestCase):
         mock_cwltool.load_tool.fetch_document.return_value = mock_loader, mock_workflowobj, "uri"
         mocked_open = mock_open()
 
-        with patch("__builtin__.open", mocked_open):
+        with patch("cwldep.open", mocked_open):
             cwldep.add_dep(fn="myfile.cwl",
                            upstream="some_remote_url.cwl",
                            set_version=None,
