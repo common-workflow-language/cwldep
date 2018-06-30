@@ -10,6 +10,12 @@ virtualenv -p python2 venv   # Create a virtual environment, can use `python3` a
 source venv/bin/activate     # Activate environment before installing `cwldep`
 ```
 
+Install from PyPi:
+
+```
+pip install cwldep
+```
+
 Install from source:
 ```
 git clone https://github.com/common-workflow-language/cwldep.git # clone cwldep repo
