@@ -95,7 +95,7 @@ def verify(tgt, locks, verified):
 
 
 def load_nocheck(upstream):
-    document_loader, workflowobj, uri = cwltool.load_tool.fetch_document(upstream)
+    loading_context, workflowobj, uri = cwltool.load_tool.fetch_document(upstream)
 
     (sch_document_loader, avsc_names) = \
         get_schema(workflowobj["cwlVersion"])[:2]
@@ -108,7 +108,7 @@ def load_nocheck(upstream):
 
     document, metadata = sch_document_loader.resolve_all(workflowobj, uri, checklinks=False)
 
-    return document, document_loader
+    return document, loading_context
 
 
 def cwl_deps(basedir, dependencies, locks, verified, operation):
@@ -130,15 +130,15 @@ def cwl_deps(basedir, dependencies, locks, verified, operation):
             if spup.path.endswith(".cwl"):
                 deps = {"class": "File", "location": upstream}  # type: Dict[Text, Any]
 
-                document, document_loader = load_nocheck(upstream)
+                document, loading_context = load_nocheck(upstream)
 
                 def loadref(base, uri):
-                    return document_loader.fetch(document_loader.fetcher.urljoin(base, uri))
+                    return loading_context.loader.fetch(loading_context.loader.fetcher.urljoin(base, uri))
 
-                document_loader.idx = {}
+                loading_context.loader.idx = {}
 
                 sfs = scandeps(
-                    upstream, document_loader.fetch(upstream), {"$import", "run"},
+                    upstream, loading_context.loader.fetch(upstream), {"$import", "run"},
                     {"$include", "$schemas", "location"}, loadref)
                 if sfs:
                     deps["secondaryFiles"] = sfs
@@ -194,7 +194,7 @@ def cwl_deps(basedir, dependencies, locks, verified, operation):
                         head = head.rstrip()
                         if head != co:
                             subprocess.call(["git", "checkout", co], cwd=tgt)
-                    commit = subprocess.check_output(["git", "rev-parse", "HEAD"]).rstrip()
+                    commit = subprocess.check_output(["git", "rev-parse", "HEAD"]).rstrip().decode('utf-8')
 
                     verified[rel] = {
                         "upstream": upstream,
@@ -220,8 +220,10 @@ def add_dep(fn, upstream, set_version, install_to):
     namespaces = workflowobj.get("$namespaces", cmap({}))
 
     document_loader.idx = {}
+    found = []
 
     def _add(wf):
+        found.append(True)
         hints = wf.setdefault("hints", {})
         obj = cmap({"upstream": upstream})
         if set_version:
@@ -252,6 +254,9 @@ def add_dep(fn, upstream, set_version, install_to):
 
     visit_class(workflowobj, ("Workflow",), _add)
 
+    if not found:
+        logging.error("No Workflow found")
+
     namespaces["dep"] = CWLDEP_URL
     workflowobj["$namespaces"] = namespaces
 
@@ -281,7 +286,7 @@ def main():
         print("WIP")
         return
 
-    document, document_loader = load_nocheck(args.dependencies)
+    document, loading_context = load_nocheck(args.dependencies)
 
     lockfile = args.dependencies + ".dep.lock"
     locks = {}
@@ -314,7 +319,7 @@ def main():
     if unref:
         logging.warn("Use 'cwldep clean' to delete unused dependencies.")
 
-    with open(lockfile, "w") as l:
-        json.dump(verified, l, indent=4, sort_keys=True)
+    with open(lockfile, "wt") as l:
+        l.write(json.dumps(verified, indent=4, sort_keys=True))
 
-    document_loader.resolve_all(document, args.dependencies, checklinks=True)
+    loading_context.loader.resolve_all(document, args.dependencies, checklinks=True)
