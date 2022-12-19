@@ -164,10 +164,48 @@ def cwl_deps(basedir, dependencies, locks, verified, operation):
                 download(tgt, upstream, "", locks, verified, operation=="check")
                 if spup.path.endswith(".tar.gz"):
                     with tarfile.open(tgt) as t:
-                        t.extractall(installTo)
+                        def is_within_directory(directory, target):
+                            
+                            abs_directory = os.path.abspath(directory)
+                            abs_target = os.path.abspath(target)
+                        
+                            prefix = os.path.commonprefix([abs_directory, abs_target])
+                            
+                            return prefix == abs_directory
+                        
+                        def safe_extract(tar, path=".", members=None, *, numeric_owner=False):
+                        
+                            for member in tar.getmembers():
+                                member_path = os.path.join(path, member.name)
+                                if not is_within_directory(path, member_path):
+                                    raise Exception("Attempted Path Traversal in Tar File")
+                        
+                            tar.extractall(path, members, numeric_owner=numeric_owner) 
+                            
+                        
+                        safe_extract(t, installTo)
                 elif spup.path.endswith(".tar.bz2"):
                     with tarfile.open(tgt) as t:
-                        t.extractall(installTo)
+                        def is_within_directory(directory, target):
+                            
+                            abs_directory = os.path.abspath(directory)
+                            abs_target = os.path.abspath(target)
+                        
+                            prefix = os.path.commonprefix([abs_directory, abs_target])
+                            
+                            return prefix == abs_directory
+                        
+                        def safe_extract(tar, path=".", members=None, *, numeric_owner=False):
+                        
+                            for member in tar.getmembers():
+                                member_path = os.path.join(path, member.name)
+                                if not is_within_directory(path, member_path):
+                                    raise Exception("Attempted Path Traversal in Tar File")
+                        
+                            tar.extractall(path, members, numeric_owner=numeric_owner) 
+                            
+                        
+                        safe_extract(t, installTo)
                 elif spup.path.endswith(".zip"):
                     with zipfile.ZipFile(tgt) as z:
                         z.extractall(installTo)
