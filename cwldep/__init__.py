@@ -113,6 +113,9 @@ def load_nocheck(upstream):
 
 def cwl_deps(basedir, dependencies, locks, verified, operation):
     for d in dependencies["dependencies"]:
+        if not d["upstream"]:
+            logging.error("Missing upstream in %s", d)
+            continue
         upstream = d["upstream"]
         spup = urllib.parse.urlsplit(upstream)
 
@@ -263,7 +266,8 @@ def add_dep(fn, upstream, set_version, install_to):
     del workflowobj["id"]
 
     with open("_"+fn+"_", "w") as f:
-        ruamel.yaml.round_trip_dump(workflowobj, f)
+        yaml = ruamel.yaml.YAML()
+        yaml.dump(workflowobj, f)
     os.rename("_"+fn+"_", fn)
 
 
